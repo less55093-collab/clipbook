@@ -1,6 +1,6 @@
 # Clipbook - 极简 Windows 剪贴板管理工具
 
-![Python](https://img.shields.io/badge/Python-3.12)
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue))
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
