@@ -4,3 +4,12 @@ __pycache__/
 dist/
 build/
 .idea/
+*.exe
+*.pyc
+*.pyo
+*.pyd
+.db
+clipboard.db
+*.log
+*.bak
+*.swp

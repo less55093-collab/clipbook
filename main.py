@@ -119,15 +119,50 @@ class ClipboardCard(CardWidget):
         self.entry = entry
         self.is_selected = False
         self.drag_start_pos = None  # 用于记录拖拽起始点
-
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedSize(160, 160)
         self.setCursor(Qt.PointingHandCursor)
         
         self.vBoxLayout = QVBoxLayout(self)
         self.vBoxLayout.setContentsMargins(10, 10, 10, 10)
-        
+        self.setStyleSheet("""
+            /* 默认状态 */
+            ClipboardCard {
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                background-color: transparent;
+                border-radius: 8px;
+            }
+            
+            /* 悬停状态（可选）：只有在没被选中时才显示悬停效果 */
+            ClipboardCard[selected="false"]:hover {
+                background-color: rgba(0, 0, 0, 0.05);
+                border: 1px solid rgba(0, 0, 0, 0.2);
+            }
+
+            /* 选中状态：利用属性选择器，优先级最高 */
+            ClipboardCard[selected="true"] {
+                border: 2px solid #0078d4; /* 蓝色边框 */
+                background-color: rgba(196, 199, 204, 0.3); /* 浅灰色背景 */
+            }""")
         self.setup_content()
+        self.setSelected(False)
+
+    def setSelected(self, is_selected):
+        self.is_selected = is_selected
+        self.setProperty("selected", is_selected)
         
+        # 2. 【关键】强制刷新样式
+        # 改变属性后，Qt 不会自动重绘样式，必须手动 polich (打磨) 一下
+        self.style().unpolish(self)
+        self.style().polish(self)
+    def mousePressEvent(self, event):
+        # 判断是否是鼠标**左键**点击
+        if event.button() == Qt.LeftButton:
+            # 左键点击时，强制设置为选中状态（永久保持）
+            self.setSelected(True)
+            self.clicked.emit(self.entry)
+        # 保留父类的鼠标事件行为（避免屏蔽其他鼠标操作，必加）
+        super().mousePressEvent(event)    
     def setup_content(self):
         entry_type = self.entry[1]
         content = self.entry[2]
@@ -288,12 +323,13 @@ class ClipboardInterface(QWidget):
         self.searchEdit.setFixedWidth(300)
         self.searchEdit.textChanged.connect(self.filter_cards)
         
-        self.deleteAllBtn = TransparentToolButton(FIF.DELETE, self)
-        self.deleteAllBtn.clicked.connect(self.show_delete_all_warning)
+        self.deleteBtn = TransparentToolButton(FIF.DELETE, self)
+        self.deleteBtn.setToolTip("删除选中")
+        self.deleteBtn.clicked.connect(self.on_delete_clicked)
         
         self.headerLayout.addWidget(self.searchEdit)
         self.headerLayout.addStretch(1)
-        self.headerLayout.addWidget(self.deleteAllBtn)
+        self.headerLayout.addWidget(self.deleteBtn)
         
         self.mainLayout.addLayout(self.headerLayout)
         
@@ -317,62 +353,28 @@ class ClipboardInterface(QWidget):
 
 
 
-    def show_delete_all_warning(self):
-        w = Flyout.create(
-            icon=FIF.INFO,
-            title='确认清空',
-            content='确定要删除所有历史记录吗？此操作不可恢复。',
-            target=self.deleteAllBtn,
-            parent=self.window(),
-            isClosable=True
-        )
+    def on_delete_clicked(self):
+        selected_cards = [card for card in self.cards if card.is_selected]
         
-        # 添加确认按钮到 Flyout (简单的 Flyout 没有按钮，我们这里直接弹出一个 Dialog 更合适，或者使用 InfoBar 提问)
-        # 为了简单，我们使用 MessageBox 或者 Dialog，但在 Fluent 中最好用 MessageBox
-        # 由于 FluentWidgets 的 MessageBox 需要父窗口，我们可以先简单实现直接清空
-        
-        # 使用 InfoBar 模拟确认
-        InfoBar.warning(
-            title="操作确认",
-            content="双击此按钮以确认清空所有记录。",
-            orient=Qt.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP_RIGHT,
-            duration=3000,
-            parent=self
-        )
-        # TODO: 更好的确认交互。既然用户点了删除所有，我们这里直接做一个简单的 Hack：
-        # 检测是否在这个按钮上再次点击 (比较复杂)。
-        # 让我们直接清空吧，用户既然点了。
-        
-        self.delete_all_entries()
+        if not selected_cards:
+            InfoBar.warning(
+                title="未选中",
+                content="请先点击卡片以选择要删除的内容。",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=2000,
+                parent=self
+            )
+            return
 
-    def delete_all_entries(self):
-        # 1. 先清空界面，释放文件占用
-        for i in reversed(range(self.cardsLayout.count())):
-            widget = self.cardsLayout.itemAt(i).widget()
-            if widget:
-                self.cardsLayout.removeWidget(widget)
-                widget.deleteLater()
-        self.cards.clear()
-        
-        # 允许事件循环处理挂起的删除事件
-        QApplication.processEvents()
-        
-        # 2. 删除文件和数据库记录
-        entries = database.get_all_entries()
-        for entry in entries:
-             # 删除文件
-            if entry[1] == 'image' and os.path.exists(entry[2]):
-                try:
-                    os.remove(entry[2])
-                except PermissionError:
-                    print(f"文件正在被使用，无法删除: {entry[2]}")
-                except Exception:
-                    pass
-            database.delete_entry(entry[0])
+        # 如果有选中的，执行删除
+        count = len(selected_cards)
+        for card in selected_cards:
+            self.delete_card(card)
             
-        InfoBar.success("已清空", "所有剪贴板记录已清除。", parent=self)
+        InfoBar.success("删除成功", f"已删除 {count} 个项目。", parent=self)
+
 
     def load_history(self):
         # Clear existing
@@ -391,7 +393,8 @@ class ClipboardInterface(QWidget):
             self.cards.append(card)
 
     def on_card_clicked(self, card):
-        pass # Handle selection visual if needed
+        # 切换选中状态
+        card.setSelected(not card.is_selected)
 
     def copy_item(self, card):
         entry = card.entry
