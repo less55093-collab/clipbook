@@ -5,28 +5,40 @@ import os
 # 定义我们应用在注册表中的名称
 APP_NAME = "ClipboardHistory"
 
-# 获取Python解释器路径和main.py的绝对路径
-# sys.executable 是 'python.exe' 或 'pythonw.exe'
-# os.path.abspath(sys.argv[0]) 是主脚本的路径
-PYTHON_EXE = sys.executable
-APP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'main.py'))
-
-# 要在注册表中写入的完整命令
-# 使用 pythonw.exe 可以在后台运行，不显示控制台窗口
-RUN_COMMAND = f'"{PYTHON_EXE.replace("python.exe", "pythonw.exe")}" "{APP_PATH}"'
-
 # 注册表路径
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+def get_run_command():
+    """获取启动命令，自动检测是打包环境还是开发环境"""
+    if getattr(sys, 'frozen', False):
+        # 打包环境：使用exe文件
+        app_path = sys.executable
+        return f'"{app_path}"'
+    else:
+        # 开发环境：使用pythonw.exe运行main.py
+        python_exe = sys.executable
+        app_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'main.py'))
+        
+        # 更加健壮地替换 python.exe 为 pythonw.exe (不区分大小写)
+        dir_name = os.path.dirname(python_exe)
+        pythonw_exe = os.path.join(dir_name, "pythonw.exe")
+        
+        if not os.path.exists(pythonw_exe):
+            # 如果找不到 pythonw，则退而求其次使用 python
+            pythonw_exe = python_exe
+            
+        return f'"{pythonw_exe}" "{app_path}"'
 
 def add_to_startup():
     """将本应用添加到开机启动项"""
     try:
+        run_command = get_run_command()
         # 打开注册表项，如果不存在则创建
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH)
         # 设置值
-        winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, RUN_COMMAND)
+        winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, run_command)
         winreg.CloseKey(key)
-        print(f"Successfully added '{APP_NAME}' to startup.")
+        print(f"Successfully added '{APP_NAME}' to startup with command: {run_command}")
         return True
     except OSError as e:
         print(f"Error adding to startup: {e}")

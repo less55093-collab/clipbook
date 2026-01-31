@@ -58,5 +58,27 @@ def delete_entry_by_content(content):
     conn.commit()
     conn.close()
 
+def get_entries_before_date(date_str):
+    """获取指定日期之前的所有条目"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, type, content, timestamp FROM clipboard WHERE timestamp < ?", (date_str,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def delete_entries_before_date(date_str):
+    """删除指定日期之前的所有条目"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    # 使用字符串比较，删除该日期0点之前的所有记录
+    # 比如 date_str="2023-10-27", 则删除 timestamp < "2023-10-27" (即2023-10-27 00:00:00之前)
+    cursor.execute("DELETE FROM clipboard WHERE timestamp < ?", (date_str,))
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted_count
+
 # 在模块首次导入时初始化数据库
 init_db()
+
