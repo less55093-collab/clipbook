@@ -28,7 +28,8 @@ SETTINGS_PATH = os.path.join(APP_DATA_DIR, 'settings.json')
 DEFAULT_SETTINGS = {
     'auto_clean_enabled': False,
     'auto_clean_days': 10,
-    'last_clean_date': None
+    'last_clean_date': None,
+    'hotkey': 'ctrl+shift+v'
 }
 
 def load_settings():

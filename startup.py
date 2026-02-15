@@ -11,8 +11,8 @@ RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 def get_run_command():
     """获取启动命令，自动检测是打包环境还是开发环境"""
     if getattr(sys, 'frozen', False):
-        # 打包环境：使用exe文件
-        app_path = sys.executable
+        # 打包环境：使用exe文件的绝对路径
+        app_path = os.path.abspath(sys.executable)
         return f'"{app_path}"'
     else:
         # 开发环境：使用pythonw.exe运行main.py
@@ -28,6 +28,27 @@ def get_run_command():
             pythonw_exe = python_exe
             
         return f'"{pythonw_exe}" "{app_path}"'
+
+def get_current_startup_path():
+    """获取当前注册表中保存的启动路径"""
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_READ)
+        value, _ = winreg.QueryValueEx(key, APP_NAME)
+        winreg.CloseKey(key)
+        return value
+    except (FileNotFoundError, OSError):
+        return None
+
+def is_startup_path_valid():
+    """检查注册表中的启动路径是否指向存在的文件"""
+    startup_path = get_current_startup_path()
+    if not startup_path:
+        return False
+    
+    # 从带引号的路径中提取实际路径
+    # 格式可能是 "path\to\exe.exe" 或 "pythonw.exe" "path\to\main.py"
+    path = startup_path.strip('"').split('"')[0]
+    return os.path.exists(path)
 
 def add_to_startup():
     """将本应用添加到开机启动项"""

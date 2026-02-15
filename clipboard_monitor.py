@@ -12,9 +12,12 @@ from PySide6.QtCore import QObject, Signal
 class ClipboardMonitor(QObject):
     """
     一个在后台运行的QObject，用于监控剪贴板。
-    当有新内容时，会发出 newItemDetected 信号。
+    当有新内容时，会发出携带数据的增量信号。
     """
-    newItemDetected = Signal()
+    # 增量信号：携带新条目的完整数据 (id, type, content, timestamp)
+    newEntryDetected = Signal(tuple)
+    # 全量刷新信号：用于需要重建列表的场景（如合并重复时删除了旧卡片）
+    fullRefreshNeeded = Signal()
 
     def __init__(self):
         super().__init__()
@@ -42,15 +45,34 @@ class ClipboardMonitor(QObject):
                     current_hash = self.get_clipboard_hash(img_bytes)
 
                     if current_hash != self.last_hash:
-                        # 对于图片，我们不合并，总是添加新的
-                        filename = f"{int(time.time())}_{current_hash[:10]}.png"
+                        hash_substr = current_hash[:10]
+                        deleted_files = database.delete_image_by_hash(hash_substr)
+                        had_duplicates = len(deleted_files) > 0
+
+                        # 清理磁盘上的旧文件
+                        for fpath in deleted_files:
+                            try:
+                                if os.path.exists(fpath):
+                                    os.remove(fpath)
+                                print(f"Removed duplicate image: {fpath}")
+                            except Exception as e:
+                                print(f"Error removing file {fpath}: {e}")
+
+                        # 保存新图片
+                        filename = f"{int(time.time())}_{hash_substr}.png"
                         filepath = os.path.join(IMAGE_DIR, filename)
                         image.save(filepath)
-                        
-                        database.add_entry('image', filepath)
+
+                        new_entry = database.add_entry('image', filepath)
                         self.last_hash = current_hash
                         print(f"Image saved: {filepath}")
-                        self.newItemDetected.emit()
+
+                        if had_duplicates:
+                            # 有重复项被删除，需要全量刷新以同步 UI
+                            self.fullRefreshNeeded.emit()
+                        else:
+                            # 纯新增，增量更新
+                            self.newEntryDetected.emit(new_entry)
                     continue
 
                 # 如果不是图片，尝试获取文本
@@ -58,18 +80,22 @@ class ClipboardMonitor(QObject):
                 if text and isinstance(text, str):
                     current_hash = self.get_clipboard_hash(text)
                     if current_hash != self.last_hash:
-                        # --- 合并逻辑 ---
-                        # 1. 先删除数据库中任何已存在的相同内容
-                        database.delete_entry_by_content(text)
-                        
-                        # 2. 再添加新的记录（这样它就有了最新的时间戳）
-                        database.add_entry('text', text)
-                        
+                        # 合并逻辑：先删除已存在的相同内容
+                        deleted_count = database.delete_entry_by_content(text)
+
+                        # 再添加新记录
+                        new_entry = database.add_entry('text', text)
                         self.last_hash = current_hash
                         print(f"Text entry updated/added: {text[:50]}...")
-                        self.newItemDetected.emit()
+
+                        if deleted_count > 0:
+                            # 有旧记录被删除，全量刷新
+                            self.fullRefreshNeeded.emit()
+                        else:
+                            # 纯新增，增量更新
+                            self.newEntryDetected.emit(new_entry)
 
             except Exception as e:
                 pass
-            
+
             time.sleep(1)
