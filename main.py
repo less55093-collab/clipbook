@@ -181,27 +181,22 @@ class EditableBlock(PlainTextEdit):
     def wheelEvent(self, event):
         # 没有焦点时，直接把滚轮事件转发给最外层的滚动区域
         if not self.hasFocus():
-            # 找到父级的 ScrollArea 并把事件发给它
             parent = self.parent()
             while parent:
                 if hasattr(parent, 'verticalScrollBar') and parent.__class__.__name__ in ('ScrollArea', 'SmoothScrollArea', 'QScrollArea'):
-                    # 找到滚动区域，转发事件
                     QApplication.sendEvent(parent.viewport(), event)
                     return
                 parent = parent.parent() if hasattr(parent, 'parent') else None
-            # 没找到滚动区域，忽略事件
             event.ignore()
             return
-            
+
         # 有焦点时，正常处理滚轮事件
-        # 如果滚到头了，让父控件（整个页面）滚动
         vbar = self.verticalScrollBar()
         is_top = (vbar.value() == vbar.minimum())
         is_bottom = (vbar.value() == vbar.maximum())
         angle = event.angleDelta().y()
 
         if (angle > 0 and is_top) or (angle < 0 and is_bottom):
-            # 滚到头了，转发给滚动区域
             parent = self.parent()
             while parent:
                 if hasattr(parent, 'verticalScrollBar') and parent.__class__.__name__ in ('ScrollArea', 'SmoothScrollArea', 'QScrollArea'):
@@ -1558,7 +1553,7 @@ class MainWindow(MSFluentWindow):
         action_show = QAction(FIF.VIEW.icon(), "显示", self)
         action_show.triggered.connect(self.show)
         action_quit = QAction(FIF.CLOSE.icon(), "退出", self)
-        action_quit.triggered.connect(QApplication.instance().quit)
+        action_quit.triggered.connect(self._quit_app)
         
         menu.addAction(action_show)
         menu.addAction(action_quit)
@@ -1650,14 +1645,22 @@ class MainWindow(MSFluentWindow):
             self.raise_()  # 确保窗口在最前面
     
     def closeEvent(self, event):
-        # 退出前注销热键
+        # 点击关闭按钮时只隐藏窗口，不注销热键
+        event.ignore()
+        self.hide()
+
+    def real_quit(self):
+        """真正退出应用时注销热键"""
         user32 = ctypes.windll.user32
         try:
             user32.UnregisterHotKey(int(self.winId()), self.hotkey_id)
         except:
             pass
-        event.ignore()
-        self.hide()
+
+    def _quit_app(self):
+        """退出应用：先注销热键，再退出"""
+        self.real_quit()
+        QApplication.instance().quit()
 
 if __name__ == '__main__':
     database.init_db()

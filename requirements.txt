@@ -2,3 +2,5 @@ PySide6
 pyperclip
 Pillow
 pywin32
+PySide6-Fluent-Widgets
+keyboard
